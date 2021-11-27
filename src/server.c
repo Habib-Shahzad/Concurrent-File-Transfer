@@ -11,6 +11,7 @@
 #define PORT 1000
 #define INT_SIZE 4
 #define LONG_SIZE 8
+#define STRING_SIZE 100
 
 int setupSocket(int i)
 {
@@ -27,7 +28,7 @@ int setupSocket(int i)
         exit(EXIT_FAILURE);
     }
 
-    // Forcefully attaching socket to the port 8080
+    // Forcefully attaching socket to the port
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
     {
         perror("setsockopt");
@@ -58,8 +59,6 @@ int setupSocket(int i)
         exit(EXIT_FAILURE);
     }
 
-    // printf("Connection successful for Port %d\n", PORT + i);
-
     return new_socket;
 }
 
@@ -67,7 +66,7 @@ struct args
 {
     int thread_number;
     char *chunk;
-    int size;
+    long size;
 };
 
 // Check if the file path exists
@@ -87,21 +86,18 @@ void slice_str(const char *str, char *buffer, size_t start, size_t end)
     buffer[j] = 0;
 }
 
-// sending file chunk to the socket
 void *sendChunk(void *input)
 {
     int thread_number = ((struct args *)input)->thread_number;
     char *chunk = ((struct args *)input)->chunk;
-    int size = ((struct args *)input)->size;
+    long size = ((struct args *)input)->size;
 
     int port = setupSocket(thread_number);
 
-    int chunk_of_chunk_size = 1000;
+    int chunk_of_chunk_size = 1000; // send 1000 bytes at one time
 
     if (size < chunk_of_chunk_size)
-    {
         send(port, chunk, size, 0);
-    }
 
     else
     {
@@ -141,6 +137,18 @@ long getFileSize(char *fileName)
     return size;
 }
 
+struct args *getData(FILE *fp, int thread_number, int chunk_size, int offset)
+{
+    char *chunk = malloc(chunk_size);
+    struct args *data = (struct args *)malloc(sizeof(struct args));
+
+    size_t bytesRead = pread(fileno(fp), chunk, chunk_size, offset);
+    data->thread_number = thread_number;
+    data->chunk = chunk;
+    data->size = chunk_size;
+
+    return data;
+}
 
 int main(int argc, char const *argv[])
 {
@@ -148,89 +156,70 @@ int main(int argc, char const *argv[])
 
     int new_socket = setupSocket(-1);
 
-    char path[100] = {0};
+    char path[STRING_SIZE] = {0};
 
-    read(new_socket, path, 100);
+    read(new_socket, path, STRING_SIZE);
 
     int file_found = file_exists(path);
 
     if (file_found)
     {
-        char* file_found_str = malloc(INT_SIZE);
+        char *file_found_str = malloc(INT_SIZE);
         sprintf(file_found_str, "%d", file_found);
-
+        // Telling process B, we found the file.
         send(new_socket, file_found_str, INT_SIZE, 0);
 
         printf("Retrieved Path: %s\n", path);
         printf("File succesfully found.\n \n");
         long file_size = getFileSize(path);
 
-        printf("File size: %lu\n", file_size);
+        printf("File size: %ld\n", file_size);
 
-        char *number_of_chunks_str = malloc(INT_SIZE);
-        read(new_socket, number_of_chunks_str, INT_SIZE);
+        // Process B telling us the number of threads
+        char *number_of_chunks_str = malloc(STRING_SIZE);
+        read(new_socket, number_of_chunks_str, STRING_SIZE);
         int number_of_chunks = atoi(number_of_chunks_str);
 
         printf("Recieved number of chunks: %d\n", number_of_chunks);
+        long chunk_size = file_size / number_of_chunks;
+        printf("Chunk Size: %ld\n", chunk_size);
 
-        int chunk_size = file_size / number_of_chunks;
 
-        printf("Chunk Size: %d\n", chunk_size);
-
+        //Since its an integer division, there would be some extra space left
         int extra_space_size = file_size % number_of_chunks;
-
         printf("Extra space size = %d\n", extra_space_size);
 
-        char *file_size_str = malloc(LONG_SIZE);
-        sprintf(file_size_str, "%lu", file_size);
+        // Telling process B the size of the file
+        char *file_size_str = malloc(STRING_SIZE);
+        sprintf(file_size_str, "%ld", file_size);
+        send(new_socket, file_size_str, STRING_SIZE, 0);
 
-        send(new_socket, file_size_str, LONG_SIZE, 0);
-
+        // Creating an array of threads
         pthread_t threads[number_of_chunks];
 
         FILE *fp = fopen(path, "r");
 
-        size_t bytesRead = 0;
-
         for (int i = 0; i < number_of_chunks - 1; i++)
         {
-            char *chunk = malloc(chunk_size);
-
-            struct args *data = (struct args *)malloc(sizeof(struct args));
-
-            bytesRead = pread(fileno(fp), chunk, chunk_size, i * chunk_size);
-
-            data->thread_number = i;
-            data->chunk = chunk;
-            data->size = chunk_size;
-
+            int offset = i * chunk_size;
+            struct args *data = getData(fp, i, chunk_size, offset);
             pthread_create(&threads[i], NULL, sendChunk, (void *)data);
         }
 
         int last_chunk_size = chunk_size;
         if (extra_space_size)
-        {
             last_chunk_size += extra_space_size;
-        }
 
-        char *last_chunk = malloc(last_chunk_size);
+        int last_thread = number_of_chunks - 1;
+        int last_chunk_offset = file_size - last_chunk_size;
 
-        bytesRead = pread(fileno(fp), last_chunk, last_chunk_size, file_size - last_chunk_size);
-
-        struct args *last_chunk_data = (struct args *)malloc(sizeof(struct args));
-
-        last_chunk_data->thread_number = number_of_chunks-1;
-        last_chunk_data->chunk = last_chunk;
-        last_chunk_data->size = last_chunk_size;
-
-        pthread_create(&threads[number_of_chunks-1], NULL, sendChunk, (void *)last_chunk_data);
-
+        struct args *last_chunk_data = getData(fp, last_thread, last_chunk_size, last_chunk_offset);
+        pthread_create(&threads[last_thread], NULL, sendChunk, (void *)last_chunk_data);
 
         for (int i = 0; i < number_of_chunks; i++)
         {
             pthread_join(threads[i], NULL);
         }
-
         fclose(fp);
     }
 

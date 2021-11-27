@@ -11,6 +11,7 @@
 #define PORT 1000
 #define INT_SIZE 4
 #define LONG_SIZE 8
+#define STRING_SIZE 100
 
 int setupSocket(int i)
 {
@@ -43,8 +44,7 @@ int setupSocket(int i)
 
 struct args
 {
-    int port;
-    int size;
+    long size;
     int thread_number;
 };
 
@@ -56,16 +56,10 @@ void createEmptyFile(char *fileName, int x)
     fclose(fp);
 }
 
-//Save char array to file
-void saveToFile(FILE *fp, char *buffer, int size, int position)
-{
-    fseek(fp, position, SEEK_SET);
-    fwrite(buffer, 1, size, fp);
-}
 
 void *recieveChunk(void *input)
 {
-    int size = ((struct args *)input)->size;
+    long size = ((struct args *)input)->size;
     int thread_number = ((struct args *)input)->thread_number;
 
     char *chunk = malloc(size);
@@ -121,18 +115,18 @@ int main(int argc, char const *argv[])
     printf("Welcome to Process B.\n");
     int sock = setupSocket(-1);
 
-    char path_to_inputFile[100];
+    char path_to_inputFile[STRING_SIZE];
     printf("Enter path to input file: ");
     scanf("%s", path_to_inputFile);
 
-    char path_to_outputFile[100];
+    char path_to_outputFile[STRING_SIZE];
     printf("Enter path to output file: ");
     scanf("%s", path_to_outputFile);
 
-    send(sock, path_to_inputFile, 100, 0);
+    send(sock, path_to_inputFile, STRING_SIZE, 0);
 
-    char *file_found_str = malloc(INT_SIZE);
-    read(sock, file_found_str, INT_SIZE);
+    char *file_found_str = malloc(STRING_SIZE);
+    read(sock, file_found_str, STRING_SIZE);
 
     int file_found = atoi(file_found_str);
 
@@ -148,30 +142,29 @@ int main(int argc, char const *argv[])
     printf("Enter number of threads: ");
     scanf("%d", &number_of_chunks);
 
-    char *number_of_chunks_str = malloc(INT_SIZE);
+    char *number_of_chunks_str = malloc(STRING_SIZE);
     sprintf(number_of_chunks_str, "%d", number_of_chunks);
 
-    send(sock, number_of_chunks_str, INT_SIZE, 0);
+    send(sock, number_of_chunks_str, STRING_SIZE, 0);
 
-    char *file_size_str = malloc(LONG_SIZE);
-    read(sock, file_size_str, LONG_SIZE);
+    char *file_size_str = malloc(STRING_SIZE);
+    read(sock, file_size_str, STRING_SIZE);
 
     long file_size = atoll(file_size_str);
 
-    printf("File size: %lu\n", file_size);
+    printf("%s\n", file_size_str);
 
-    int chunk_size = file_size / number_of_chunks;
+    printf("File size: %ld\n", file_size);
 
-    printf("Chunk Size: %d\n", chunk_size);
+    long chunk_size = file_size / number_of_chunks;
+
+    printf("Chunk Size: %ld\n", chunk_size);
 
     int extra_space_size = file_size % number_of_chunks;
     printf("Extra space size = %d\n", extra_space_size);
 
     createEmptyFile(path_to_outputFile, (chunk_size * number_of_chunks) - extra_space_size);
-
     FILE *fp = fopen(path_to_outputFile, "r+b");
-
-    int number_of_chunks_iterations = number_of_chunks;
 
     pthread_t threads[number_of_chunks];
 
