@@ -56,22 +56,16 @@ void createEmptyFile(char *fileName, int x)
     fclose(fp);
 }
 
-
 void *recieveChunk(void *input)
 {
     long size = ((struct args *)input)->size;
     int thread_number = ((struct args *)input)->thread_number;
-
     char *chunk = malloc(size);
-
     int port = setupSocket(thread_number);
-
     int chunk_of_chunk_size = 1000;
 
     if (size < chunk_of_chunk_size)
-    {
         read(port, chunk, size);
-    }
 
     else
     {
@@ -93,6 +87,7 @@ void *recieveChunk(void *input)
             }
             start = end;
             end += chunk_of_chunk_size;
+            free(chunk_of_chunk);
         }
 
         if (extra_space_left)
@@ -105,6 +100,7 @@ void *recieveChunk(void *input)
                 chunk[j] = extra_space_of_chunk[x];
                 x += 1;
             }
+            free(extra_space_of_chunk);
         }
     }
     return (void *)chunk;
@@ -118,10 +114,6 @@ int main(int argc, char const *argv[])
     char path_to_inputFile[STRING_SIZE];
     printf("Enter path to input file: ");
     scanf("%s", path_to_inputFile);
-
-    char path_to_outputFile[STRING_SIZE];
-    printf("Enter path to output file: ");
-    scanf("%s", path_to_outputFile);
 
     send(sock, path_to_inputFile, STRING_SIZE, 0);
 
@@ -138,7 +130,11 @@ int main(int argc, char const *argv[])
 
     printf("Process A successfully found the file. \n");
 
-    int number_of_chunks ;
+    char path_to_outputFile[STRING_SIZE];
+    printf("Enter path to output file: ");
+    scanf("%s", path_to_outputFile);
+
+    int number_of_chunks;
     printf("Enter number of threads: ");
     scanf("%d", &number_of_chunks);
 
@@ -161,54 +157,60 @@ int main(int argc, char const *argv[])
     printf("Chunk Size: %ld\n", chunk_size);
 
     int extra_space_size = file_size % number_of_chunks;
-    printf("Extra space size = %d\n", extra_space_size);
+    printf("Extra space size = %d\n \n", extra_space_size);
 
     createEmptyFile(path_to_outputFile, (chunk_size * number_of_chunks) - extra_space_size);
     FILE *fp = fopen(path_to_outputFile, "r+b");
 
+    printf("Successfully created an empty file %s\n \n", path_to_outputFile);
+
+    printf("Writing Data recieved on this file...\n");
+
     pthread_t threads[number_of_chunks];
+
+    struct args *data[number_of_chunks];
+
+    for (int i = 0; i < number_of_chunks; i++)
+    {
+        data[i] = (struct args *)malloc(sizeof(struct args));
+    }
 
     sleep(1);
 
-    for (int i = 0; i < number_of_chunks - 1; i++)
+    for (int i = 0; i < number_of_chunks; i++)
     {
-        struct args *data = (struct args *)malloc(sizeof(struct args));
-
-        data->size = chunk_size;
-        data->thread_number = i;
-
-        pthread_create(&threads[i], NULL, recieveChunk, (void *)data);
+        int size = chunk_size;
+        if (i == (number_of_chunks - 1))
+            size += extra_space_size;
+        data[i]->size = size;
+        data[i]->thread_number = i;
+        pthread_create(&threads[i], NULL, recieveChunk, (void *)data[i]);
     }
-
-    int last_chunk_size = chunk_size;
-    if (extra_space_size)
-    {
-        last_chunk_size += extra_space_size;
-    }
-
-    char *last_chunk = malloc(last_chunk_size);
-
-    struct args *last_chunk_data = (struct args *)malloc(sizeof(struct args));
-
-    last_chunk_data->thread_number = number_of_chunks - 1;
-    last_chunk_data->size = last_chunk_size;
-
-    pthread_create(&threads[number_of_chunks - 1], NULL, recieveChunk, (void *)last_chunk_data);
 
     for (int i = 0; i < number_of_chunks; i++)
     {
         void *chunk;
         pthread_join(threads[i], &chunk);
-        int size_of_chunk = chunk_size;
-        int offset = i * size_of_chunk;
+        int size = chunk_size;
+        int offset = i * size;
         if (i == number_of_chunks - 1)
-        {
-            size_of_chunk += extra_space_size;
-            offset = file_size - size_of_chunk;
-        }
-        pwrite(fileno(fp), (char *)chunk, size_of_chunk, offset);
+            size += extra_space_size;
+        pwrite(fileno(fp), (char *)chunk, size, offset);
+        free(chunk);
     }
 
+    for (int i = 0; i < number_of_chunks; i++)
+    {
+        free(data[i]);
+    }
+
+    printf("File transfer Successful\n");
+
+    free(number_of_chunks_str);
+    free(file_found_str);
+    free(file_size_str);
+
+    close(sock);
     fclose(fp);
 
     return 0;

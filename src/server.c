@@ -114,6 +114,7 @@ void *sendChunk(void *input)
             start = end;
             end += chunk_of_chunk_size;
             send(port, chunk_of_chunk, chunk_of_chunk_size, 0);
+            free(chunk_of_chunk);
         }
 
         if (extra_space_left)
@@ -121,6 +122,7 @@ void *sendChunk(void *input)
             char *extra_space_of_chunk = malloc(extra_space_left);
             slice_str(chunk, extra_space_of_chunk, size - extra_space_left, size - 1);
             send(port, extra_space_of_chunk, extra_space_left, 0);
+            free(extra_space_of_chunk);
         }
     }
 
@@ -135,19 +137,6 @@ long getFileSize(char *fileName)
     long size = ftell(file);
     fclose(file);
     return size;
-}
-
-struct args *getData(FILE *fp, int thread_number, int chunk_size, int offset)
-{
-    char *chunk = malloc(chunk_size);
-    struct args *data = (struct args *)malloc(sizeof(struct args));
-
-    size_t bytesRead = pread(fileno(fp), chunk, chunk_size, offset);
-    data->thread_number = thread_number;
-    data->chunk = chunk;
-    data->size = chunk_size;
-
-    return data;
 }
 
 int main(int argc, char const *argv[])
@@ -184,7 +173,6 @@ int main(int argc, char const *argv[])
         long chunk_size = file_size / number_of_chunks;
         printf("Chunk Size: %ld\n", chunk_size);
 
-
         //Since its an integer division, there would be some extra space left
         int extra_space_size = file_size % number_of_chunks;
         printf("Extra space size = %d\n", extra_space_size);
@@ -197,35 +185,59 @@ int main(int argc, char const *argv[])
         // Creating an array of threads
         pthread_t threads[number_of_chunks];
 
-        FILE *fp = fopen(path, "r");
+        FILE *fp = fopen(path, "rb");
 
-        for (int i = 0; i < number_of_chunks - 1; i++)
+        struct args *data[number_of_chunks];
+        char *chunks[number_of_chunks];
+
+        for (int i = 0; i < number_of_chunks; i++)
         {
-            int offset = i * chunk_size;
-            struct args *data = getData(fp, i, chunk_size, offset);
-            pthread_create(&threads[i], NULL, sendChunk, (void *)data);
+            int size = chunk_size;
+            if (i == number_of_chunks - 1)
+                size += extra_space_size;
+            chunks[i] = malloc(size);
+            data[i] = (struct args *)malloc(sizeof(struct args));
         }
 
-        int last_chunk_size = chunk_size;
-        if (extra_space_size)
-            last_chunk_size += extra_space_size;
-
-        int last_thread = number_of_chunks - 1;
-        int last_chunk_offset = file_size - last_chunk_size;
-
-        struct args *last_chunk_data = getData(fp, last_thread, last_chunk_size, last_chunk_offset);
-        pthread_create(&threads[last_thread], NULL, sendChunk, (void *)last_chunk_data);
+        for (int i = 0; i < number_of_chunks; i++)
+        {
+            int size = chunk_size;
+            int offset = i * chunk_size;
+            if (i == (number_of_chunks - 1))
+            {
+                size += extra_space_size;
+                offset = file_size - size;
+            }
+            size_t bytesRead = pread(fileno(fp), chunks[i], size, offset);
+            data[i]->thread_number = i;
+            data[i]->chunk = chunks[i];
+            data[i]->size = size;
+            pthread_create(&threads[i], NULL, sendChunk, (void *)data[i]);
+        }
 
         for (int i = 0; i < number_of_chunks; i++)
         {
             pthread_join(threads[i], NULL);
+            free(data[i]);
         }
+
+        sleep(1);
+
+        for (int i = 0; i < number_of_chunks; i++)
+        {
+            free(chunks[i]);
+        }
+
+        free(file_found_str);
+        free(file_size_str);
+        free(number_of_chunks_str);
+
         fclose(fp);
     }
 
     else
     {
-        printf("Could not find the file %s\n", path);
+        printf("Could not find the file: '%s'\n", path);
         exit(1);
     }
 
