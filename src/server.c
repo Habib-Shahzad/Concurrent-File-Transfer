@@ -208,7 +208,7 @@ int main(int argc, char const *argv[])
                 size += extra_space_size;
                 offset = file_size - size;
             }
-            size_t bytesRead = pread(fileno(fp), chunks[i], size, offset);
+            pread(fileno(fp), chunks[i], size, offset);
             data[i]->thread_number = i;
             data[i]->chunk = chunks[i];
             data[i]->size = size;

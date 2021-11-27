@@ -1,3 +1,3 @@
 #!/bin/bash
-gcc ./src/client.c -o ./bin/client  
+gcc -Wall ./src/client.c -o ./bin/client 
 ./bin/client
