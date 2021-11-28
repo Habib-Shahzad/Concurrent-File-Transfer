@@ -12,6 +12,7 @@
 #define INT_SIZE 4
 #define LONG_SIZE 8
 #define STRING_SIZE 100
+#define SOCKET_CHUNK_SIZE 200
 
 int setupSocket(int i)
 {
@@ -79,7 +80,7 @@ int file_exists(char *filename)
 void slice_str(const char *str, char *buffer, size_t start, size_t end)
 {
     size_t j = 0;
-    for (size_t i = start; i <= end; ++i)
+    for (size_t i = start; i < end; ++i)
     {
         buffer[j++] = str[i];
     }
@@ -94,7 +95,7 @@ void *sendChunk(void *input)
 
     int port = setupSocket(thread_number);
 
-    int chunk_of_chunk_size = 1000; // send 1000 bytes at one time
+    int chunk_of_chunk_size = SOCKET_CHUNK_SIZE; // send 200 bytes at one time
 
     if (size < chunk_of_chunk_size)
         send(port, chunk, size, 0);
@@ -110,7 +111,7 @@ void *sendChunk(void *input)
         for (int i = 0; i < number_of_chunks_of_chunk; i++)
         {
             char *chunk_of_chunk = malloc(chunk_of_chunk_size);
-            slice_str(chunk, chunk_of_chunk, start, end - 1);
+            slice_str(chunk, chunk_of_chunk, start, end );
             start = end;
             end += chunk_of_chunk_size;
             send(port, chunk_of_chunk, chunk_of_chunk_size, 0);
@@ -120,13 +121,13 @@ void *sendChunk(void *input)
         if (extra_space_left)
         {
             char *extra_space_of_chunk = malloc(extra_space_left);
-            slice_str(chunk, extra_space_of_chunk, size - extra_space_left, size - 1);
+            slice_str(chunk, extra_space_of_chunk, size - extra_space_left, size );
             send(port, extra_space_of_chunk, extra_space_left, 0);
             free(extra_space_of_chunk);
         }
     }
 
-    return NULL;
+    return chunk;
 }
 
 // Get the size of file in bytes
@@ -215,11 +216,15 @@ int main(int argc, char const *argv[])
             pthread_create(&threads[i], NULL, sendChunk, (void *)data[i]);
         }
 
+        int x = 0;
         for (int i = 0; i < number_of_chunks; i++)
         {
-            pthread_join(threads[i], NULL);
+            void* res;
+            pthread_join(threads[i], &res);
+            x += strlen( (char*) res );
             free(data[i]);
         }
+        printf("ok = %d", x);
 
         sleep(1);
 

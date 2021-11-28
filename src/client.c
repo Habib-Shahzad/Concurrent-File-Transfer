@@ -12,6 +12,8 @@
 #define INT_SIZE 4
 #define LONG_SIZE 8
 #define STRING_SIZE 100
+#define SOCKET_CHUNK_SIZE 200
+
 
 int setupSocket(int i)
 {
@@ -62,7 +64,7 @@ void *recieveChunk(void *input)
     int thread_number = ((struct args *)input)->thread_number;
     char *chunk = malloc(size);
     int port = setupSocket(thread_number);
-    int chunk_of_chunk_size = 1000;
+    int chunk_of_chunk_size = SOCKET_CHUNK_SIZE;
 
     if (size < chunk_of_chunk_size)
         read(port, chunk, size);
@@ -187,6 +189,7 @@ int main(int argc, char const *argv[])
         pthread_create(&threads[i], NULL, recieveChunk, (void *)data[i]);
     }
 
+    int x = 0;
     for (int i = 0; i < number_of_chunks; i++)
     {
         void *chunk;
@@ -196,8 +199,11 @@ int main(int argc, char const *argv[])
         if (i == number_of_chunks - 1)
             size += extra_space_size;
         pwrite(fileno(fp), (char *)chunk, size, offset);
+        x += strlen((char *)chunk);
         free(chunk);
     }
+
+    printf("ok = %d", x);
 
     for (int i = 0; i < number_of_chunks; i++)
     {
